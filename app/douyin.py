@@ -45,9 +45,15 @@ class DouyinChat:
         await search.click()
         await search.fill("")
         await search.fill(name)
-        await self.page.wait_for_timeout(1_500)
 
-        result = await self._search_result(name)
+        # 搜索结果是异步加载的，Actions 等慢网络下 1.5 秒可能不够。
+        # 轮询扫描结果，单次间隔 2 秒，最多约 12 秒。
+        result = None
+        for _ in range(6):
+            await self.page.wait_for_timeout(2_000)
+            result = await self._search_result(name)
+            if result is not None:
+                break
         if result is None:
             raise PageOperationError("搜索不到目标好友")
         await result.click(force=True)
@@ -290,9 +296,26 @@ async def _has_exact_text(locators: Locator, expected: str) -> bool:
 
 async def _text_equals(locator: Locator, expected: str) -> bool:
     try:
-        return (await locator.inner_text(timeout=500)).strip() == expected
+        actual = (await locator.inner_text(timeout=500)).strip()
     except Exception:
         return False
+    return _fire_badge_suffix_matches(actual, expected)
+
+
+# 续火花好友的搜索结果/会话/聊天标题会在名字后带火花计数徽标，如
+# "zhuzhu 🔥549"。徽标是平台附加的状态，不属于名字本身，因此精确匹配时
+# 允许名字后跟一个 "🔥<数字>" 后缀；除此之外仍然严格相等，
+# "test" 永远不会匹配 "test1"。
+_FIRE_BADGE_SUFFIX_RE_TEMPLATE = r"{name}\s*🔥\s*\d*"
+
+
+def _fire_badge_suffix_matches(actual: str, expected: str) -> bool:
+    actual = actual.strip()
+    expected = expected.strip()
+    if actual == expected:
+        return True
+    pattern = _FIRE_BADGE_SUFFIX_RE_TEMPLATE.format(name=re.escape(expected))
+    return re.fullmatch(pattern, actual) is not None
 
 
 # Matches a group chat display name: the configured target name optionally
@@ -301,7 +324,7 @@ async def _text_equals(locator: Locator, expected: str) -> bool:
 # separate from _text_equals so the friend exact-match semantics stay strict:
 # it must never let "test" match "test1" (no trailing brackets to legitimize a
 # longer name). re.fullmatch anchors both ends; re.escape makes the name literal.
-_GROUP_COUNT_SUFFIX_RE_TEMPLATE = r"{name}\s*[\(（]\s*\d+\s*[\)）]"
+_GROUP_COUNT_SUFFIX_RE_TEMPLATE = r"{name}\s*[$（]\s*\d+\s*[$）]"
 
 
 def _group_count_suffix_matches(actual: str, expected: str) -> bool:
