@@ -41,6 +41,11 @@ jobs:
       - name: Write protected configuration
         shell: bash
         run: printf '%s' "$DOUYIN_CONFIG" > config.json
+      - name: Debug print friends   # 验证完删除
+        shell: bash
+        run: |
+          python -c "import json; print('friends =', json.load(open('config.json', encoding='utf-8')).get('friends'))"
+          if [ -d config/tasks ]; then for f in config/tasks/*.json; do echo "--- $f"; cat "$f"; done; fi
       - name: Write multi-account configuration
         shell: bash
         env:
@@ -117,11 +122,6 @@ jobs:
           else
             python run.py
           fi
-      - name: Debug print friends   # 验证完删除
-        shell: bash
-        run: |
-          python -c "import json; print('friends =', json.load(open('config.json', encoding='utf-8')).get('friends'))"
-          if [ -d config/tasks ]; then for f in config/tasks/*.json; do echo "--- $f"; cat "$f"; done; fi
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
